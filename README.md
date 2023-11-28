@@ -29,5 +29,5 @@
 
 ### Version history
 
-Version 1 released on November 27, 2023.
+Version 1 released on November 28, 2023.
 
