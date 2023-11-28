@@ -87,7 +87,7 @@ public class Hoechst_ORF1p_pTAU implements PlugIn {
             // Write header in results file
             String header = "Image name\tNucleus label\tNucleus volume (µm3)\tNucleus circularity\t" +
                      "ORF1p bg\tNucleus ORF1p bg-corr int mean\tNucleus ORF1p int sd\tis pTAU?\n";
-            FileWriter fwCellsResults = new FileWriter(outDirResults + "results.xls", false);
+            FileWriter fwCellsResults = new FileWriter(outDirResults + "results.csv", false);
             BufferedWriter cellsResults = new BufferedWriter(fwCellsResults);
             cellsResults.write(header);
             cellsResults.flush();
