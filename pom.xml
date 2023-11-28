@@ -12,7 +12,8 @@
         <packaging>jar</packaging>
 	<name>Hoechst_ORF1p_pTAU</name>
 	<description>
-            Detect Hoechst nuclei, ORF1p cells and pTAU cells and compute their colocalization
+            Detect Hoechst nuclei and measure their intensity in ORF1p channel
+            Detect pTAU cells and colocalize them with Hoechst nuclei
         </description>
 
 	<developers>

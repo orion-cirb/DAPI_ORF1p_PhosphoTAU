@@ -1,4 +1,3 @@
-
 import Hoechst_ORF1p_pTAU_Tools.Cell;
 import Hoechst_ORF1p_pTAU_Tools.Tools;
 import ij.*;
@@ -12,7 +11,6 @@ import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import loci.common.services.DependencyException;
@@ -30,7 +28,8 @@ import org.scijava.util.ArrayUtils;
 
 
 /**
- * Detect Hoechst nuclei, ORF1p cells and pTAU cells and compute their colocalization
+ * Detect Hoechst nuclei and measure their intensity in ORF1p channel
+ * Detect pTAU cells and colocalize them with Hoechst nuclei
  * @author ORION-CIRB
  */
 public class Hoechst_ORF1p_pTAU implements PlugIn {
@@ -86,9 +85,8 @@ public class Hoechst_ORF1p_pTAU implements PlugIn {
             }
             
             // Write header in results file
-            String header = "Image name\tNuc label\tNuc volume\tNuc circularity\tNuc ORF1p int mean\tNuc pTAU int mean\t" +
-                     "is ORF1p?\tNeuN volume\tNeuN int mean\tNeuN ORF1p int mean\t" +
-                     "is ORF1p?\tORF1p volume\tORF1p int mean\tORF1p NeuN int mean\n";
+            String header = "Image name\tNucleus label\tNucleus volume (µm3)\tNucleus circularity\t" +
+                     "ORF1p bg\tNucleus ORF1p bg-corr int mean\tNucleus ORF1p int sd\tis pTAU?\n";
             FileWriter fwCellsResults = new FileWriter(outDirResults + "results.xls", false);
             BufferedWriter cellsResults = new BufferedWriter(fwCellsResults);
             cellsResults.write(header);
@@ -106,57 +104,46 @@ public class Hoechst_ORF1p_pTAU implements PlugIn {
                 options.setColorMode(ImporterOptions.COLOR_MODE_GRAYSCALE);
                 
                 // Open Hoechst channel
-                tools.print("- Analyzing DAPI channel -");
+                tools.print("- Analyzing Hoechst channel -");
                 int indexCh = ArrayUtils.indexOf(channels, channelChoices[0]);
                 ImagePlus imgHoechst = BF.openImagePlus(options)[indexCh];
                 // Detect Hoechst nuclei with CellPose
-                Objects3DIntPopulation dapiPop = tools.cellposeDetection(imgHoechst, true, tools.cellposeNucModel, 1, tools.cellposeNucDiam, tools.cellposeNucStitchThresh, tools.minNucVol, tools.maxNucVol);
+                Objects3DIntPopulation nucleiPop = tools.cellposeDetection(imgHoechst, tools.cellposeNucModel, tools.cellposeNucDiam, tools.cellposeNucStitchThresh, tools.minNucVol, tools.maxNucVol);
 
-                // Open NeuN channel
-                tools.print("- Analyzing NeuN channel -");
-                indexCh = ArrayUtils.indexOf(channels, channelChoices[1]);
-                ImagePlus imgNeun = BF.openImagePlus(options)[indexCh];
-                // Detect NeuN cells with CellPose
-                Objects3DIntPopulation neunPop = tools.cellposeDetection(imgNeun, true, tools.cellposeNeunModel, 1, tools.cellposeNeunDiam, tools.cellposeNeunStitchThresh, tools.minNeunVol, tools.maxNeunVol);
-                
                 // Open ORF1p channel
                 tools.print("- Analyzing ORF1p channel -");
-                indexCh = ArrayUtils.indexOf(channels, channelChoices[2]);
+                indexCh = ArrayUtils.indexOf(channels, channelChoices[1]);
                 ImagePlus imgOrf1p = BF.openImagePlus(options)[indexCh];
-                // Detect NeuN cells with CellPose
-                Objects3DIntPopulation orf1pPop = tools.cellposeDetection(imgOrf1p, true, tools.cellposeOrf1pModel, 1, tools.cellposeOrf1pDiam, tools.cellposeOrf1pStitchThresh, tools.minOrf1pVol, tools.maxOrf1pVol);
+                // Measure ORF1p channel background
+                double bgOrf1p = tools.measureBackgroundNoise(imgOrf1p);
+
+                // Open pTAU channel
+                tools.print("- Analyzing pTAU channel -");
+                indexCh = ArrayUtils.indexOf(channels, channelChoices[2]);
+                ImagePlus imgPtau = BF.openImagePlus(options)[indexCh];
+                // Detect pTAU cells with CellPose
+                Objects3DIntPopulation ptauPop = tools.cellposeDetection(imgPtau, tools.cellposeModelPath+tools.cellposePtauModel, tools.cellposePtauDiam, tools.cellposePtauStitchThresh, tools.minPtauVol, tools.maxPtauVol);
                
-                tools.print("- Colocalizing nuclei with NeuN and ORF1p cells -");
-                ArrayList<Cell> cells = tools.colocalization(dapiPop, neunPop, orf1pPop);
-                
-                tools.print("- Computing backgrounds statistics -");
-                HashMap<String, Double> bgStats = tools.getBackgroundStats(imgHoechst, imgNeun, imgOrf1p);
+                tools.print("- Colocalizing nuclei with pTAU cells -");
+                ArrayList<Cell> cells = tools.colocalization(nucleiPop, ptauPop);
                 
                 tools.print("- Measuring cells parameters -");
-                tools.writeCellsParameters(cells, imgHoechst, imgNeun, imgOrf1p, bgStats);
+                tools.writeCellsParameters(cells, imgOrf1p, bgOrf1p);
                 
                 // Draw results
                 tools.print("- Saving results -");
-                tools.drawResults(imgHoechst, cells, parentFolder, rootName, outDirResults);
+                tools.drawResults(cells, imgHoechst, imgPtau, outDirResults+rootName);
                 
                 // Write results
                 for (Cell cell : cells) {
-                    cellsResults.write(parentFolder+"\t"+rootName+"\t"+cell.params.get("label")+"\t"+cell.params.get("nucVol")+"\t"+cell.params.get("nucCirc")+
-                        "\t"+cell.params.get("nucIntMean")+"\t"+cell.params.get("nucIntSd")+"\t"+cell.params.get("nucIntMeanNeun")+
-                        "\t"+cell.params.get("nucIntSdNeun")+"\t"+cell.params.get("nucIntMeanOrf1p")+"\t"+cell.params.get("nucIntSdOrf1p")+
-                        "\t"+(cell.neun!=null)+"\t"+cell.params.get("neunVol")+"\t"+cell.params.get("neunIntMean")+"\t"+cell.params.get("neunIntSd")+
-                        "\t"+cell.params.get("neunIntMeanOrf1p")+"\t"+cell.params.get("neunIntSdOrf1p")+"\t"+cell.params.get("neunCytoVol")+
-                        "\t"+cell.params.get("neunCytoIntMean")+"\t"+cell.params.get("neunCytoIntSd")+"\t"+cell.params.get("neunCytoIntMeanOrf1p")+
-                        "\t"+cell.params.get("neunCytoIntSdOrf1p")+"\t"+(cell.orf1p!=null)+"\t"+cell.params.get("orf1pVol")+"\t"+cell.params.get("orf1pIntMean")+
-                        "\t"+cell.params.get("orf1pIntSd")+"\t"+cell.params.get("orf1pIntMeanNeun")+"\t"+cell.params.get("orf1pIntSdNeun")+
-                        "\t"+cell.params.get("orf1pCytoVol")+"\t"+cell.params.get("orf1pCytoIntMean")+"\t"+cell.params.get("orf1pCytoIntSd")+
-                        "\t"+cell.params.get("orf1pCytoIntMeanNeun")+"\t"+cell.params.get("orf1pCytoIntSdNeun")+"\n");
+                    cellsResults.write(rootName+"\t"+cell.params.get("label")+"\t"+cell.params.get("nucVol")+"\t"+cell.params.get("nucCirc")+
+                        "\t"+bgOrf1p+"\t"+cell.params.get("nucOrf1pIntMean")+"\t"+cell.params.get("nucOrf1pIntSd")+"\t"+cell.isPtau+"\n");
                     cellsResults.flush();
                 }
                 
                 tools.closeImg(imgHoechst);
-                tools.closeImg(imgNeun);
                 tools.closeImg(imgOrf1p);
+                tools.closeImg(imgPtau);
             }
         } catch (IOException | DependencyException | ServiceException | FormatException ex) {
             Logger.getLogger(Hoechst_ORF1p_pTAU.class.getName()).log(Level.SEVERE, null, ex);

@@ -14,21 +14,18 @@ import ij.plugin.Duplicator;
 import ij.plugin.RGBStackMerge;
 import ij.plugin.ZProjector;
 import ij.plugin.filter.ParticleAnalyzer;
-import ij.process.ImageStatistics;
 import java.awt.Color;
 import java.awt.Font;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import javax.swing.ImageIcon;
 import loci.common.services.ServiceException;
 import loci.formats.FormatException;
 import loci.formats.meta.IMetadata;
 import loci.plugins.util.ImageProcessorReader;
-import mcib3d.geom2.Object3DComputation;
 import mcib3d.geom2.Object3DInt;
 import mcib3d.geom2.Object3DPlane;
 import mcib3d.geom2.Objects3DIntPopulation;
@@ -53,24 +50,19 @@ public class Tools {
     
     // Cellpose
     private String cellposeEnvDirPath = IJ.isWindows()? System.getProperty("user.home")+"\\miniconda3\\envs\\CellPose" : "/opt/miniconda3/envs/cellpose";
+    public final String cellposeModelPath = IJ.isWindows()? System.getProperty("user.home")+"\\.cellpose\\models\\" : "";
     // Nuclei detection
     public String cellposeNucModel = "cyto";
-    public int cellposeNucDiam = 30;
-    public double cellposeNucStitchThresh = 0.75;
-    public double minNucVol = 50;
-    public double maxNucVol = 1500;
-    // NeuN detection
-    public String cellposeNeunModel = "cyto2";
-    public int cellposeNeunDiam = 40;
-    public double cellposeNeunStitchThresh = 0.75;
-    public double minNeunVol = 50;
-    public double maxNeunVol = 1500;
-    // ORF1p detection
-    public String cellposeOrf1pModel = "cyto2";
-    public int cellposeOrf1pDiam = 40;
-    public double cellposeOrf1pStitchThresh = 0.75;
-    public double minOrf1pVol = 50;
-    public double maxOrf1pVol = 1500;
+    public int cellposeNucDiam = 100;
+    public double cellposeNucStitchThresh = 0.5;
+    public double minNucVol = 200;
+    public double maxNucVol = 6000;
+    // pTAU detection
+    public String cellposePtauModel = "cyto2_pTAU";
+    public int cellposePtauDiam = 140;
+    public double cellposePtauStitchThresh = 0.5;
+    public double minPtauVol = 1000;
+    public double maxPtauVol = 20000;
     
     
     
@@ -103,39 +95,33 @@ public class Tools {
      */
     public String findImageType(File imagesFolder) {
         String ext = "";
-        File[] files = imagesFolder.listFiles();
-        for (File file: files) {
-            if(file.isFile()) {
-                String fileExt = FilenameUtils.getExtension(file.getName());
-                switch (fileExt) {
-                    case "nd" :
-                       ext = fileExt;
-                       break;
-                    case "nd2" :
-                       ext = fileExt;
-                       break;
-                    case "czi" :
-                       ext = fileExt;
-                       break;
-                    case "lif"  :
-                        ext = fileExt;
-                        break;
-                    case "ics" :
-                        ext = fileExt;
-                        break;
-                    case "ics2" :
-                        ext = fileExt;
-                        break;
-                    case "tif" :
-                        ext = fileExt;
-                        break;
-                    case "tiff" :
-                        ext = fileExt;
-                        break;
-                }
-            } else if (file.isDirectory() && !file.getName().equals("Results")) {
-                ext = findImageType(file);
-                if (! ext.equals(""))
+        String[] files = imagesFolder.list();
+        for (String name : files) {
+            String fileExt = FilenameUtils.getExtension(name);
+            switch (fileExt) {
+               case "nd" :
+                   ext = fileExt;
+                   break;
+                case "czi" :
+                   ext = fileExt;
+                   break;
+                case "lif"  :
+                    ext = fileExt;
+                    break;
+                case "ics" :
+                    ext = fileExt;
+                    break;
+                case "ics2" :
+                    ext = fileExt;
+                    break;
+                case "lsm" :
+                    ext = fileExt;
+                    break;
+                case "tif" :
+                    ext = fileExt;
+                    break;
+                case "tiff" :
+                    ext = fileExt;
                     break;
             }
         }
@@ -187,7 +173,7 @@ public class Tools {
      * @throws loci.formats.FormatException
      * @throws java.io.IOException
      */
-    public String[] findChannels (String imageName, IMetadata meta, ImageProcessorReader reader) throws loci.common.services.DependencyException, ServiceException, FormatException, IOException {
+    public String[] findChannels(String imageName, IMetadata meta, ImageProcessorReader reader) throws loci.common.services.DependencyException, ServiceException, FormatException, IOException {
         int chs = reader.getSizeC();
         String[] channels = new String[chs];
         String imageExt =  FilenameUtils.getExtension(imageName);
@@ -264,14 +250,10 @@ public class Tools {
         gd.addMessage("Nuclei detection", Font.getFont("Monospace"), Color.blue);
         gd.addNumericField("Min nucleus volume (µm3): ", minNucVol);
         gd.addNumericField("Max nucleus volume (µm3): ", maxNucVol);
-    
-        gd.addMessage("NeuN detection", Font.getFont("Monospace"), Color.blue);
-        gd.addNumericField("Min cell volume (µm3): ", minNeunVol);
-        gd.addNumericField("Max cell volume (µm3): ", maxNeunVol);
         
-        gd.addMessage("ORF1p detection", Font.getFont("Monospace"), Color.blue);
-        gd.addNumericField("Min cell volume (µm3): ", minOrf1pVol);
-        gd.addNumericField("Max cell volume (µm3): ", maxOrf1pVol);
+        gd.addMessage("pTAU cells detection", Font.getFont("Monospace"), Color.blue);
+        gd.addNumericField("Min cell volume (µm3): ", minPtauVol);
+        gd.addNumericField("Max cell volume (µm3): ", maxPtauVol);
         
         gd.addMessage("Image calibration", Font.getFont("Monospace"), Color.blue);
         gd.addNumericField("XY pixel size (µm): ", cal.pixelWidth);
@@ -286,10 +268,8 @@ public class Tools {
         
         minNucVol = gd.getNextNumber();
         maxNucVol = gd.getNextNumber();
-        minNeunVol = gd.getNextNumber();
-        maxNeunVol = gd.getNextNumber();
-        minOrf1pVol = gd.getNextNumber();
-        maxOrf1pVol = gd.getNextNumber();
+        minPtauVol = gd.getNextNumber();
+        maxPtauVol = gd.getNextNumber();
         cal.pixelWidth = cal.pixelHeight = gd.getNextNumber();
         cal.pixelDepth = gd.getNextNumber();
         pixelVol = cal.pixelWidth*cal.pixelWidth*cal.pixelDepth;
@@ -315,22 +295,17 @@ public class Tools {
      * - apply CellPose in 2D slice by slice 
      * - let CellPose reconstruct cells in 3D using the stitch threshold parameter
      */
-    public Objects3DIntPopulation cellposeDetection(ImagePlus img, boolean resize, String cellposeModel, int channel, int diameter, double stitchThreshold, double volMin, double volMax) throws IOException{
-        ImagePlus imgResized;
-        if (resize)
-            imgResized = img.resize((int)(img.getWidth()*0.5), (int)(img.getHeight()*0.5), 1, "none");
-        else
-            imgResized = new Duplicator().run(img);
+    public Objects3DIntPopulation cellposeDetection(ImagePlus img, String cellposeModel, int diameter, double stitchThreshold, double volMin, double volMax) throws IOException{
+        ImagePlus imgIn = new Duplicator().run(img);
 
         // Define CellPose settings
-        CellposeTaskSettings settings = new CellposeTaskSettings(cellposeModel, channel, diameter, cellposeEnvDirPath);
+        CellposeTaskSettings settings = new CellposeTaskSettings(cellposeModel, 1, diameter, cellposeEnvDirPath);
         settings.setStitchThreshold(stitchThreshold);
         settings.useGpu(true);
        
         // Run CellPose
-        CellposeSegmentImgPlusAdvanced cellpose = new CellposeSegmentImgPlusAdvanced(settings, imgResized);
+        CellposeSegmentImgPlusAdvanced cellpose = new CellposeSegmentImgPlusAdvanced(settings, imgIn);
         ImagePlus imgOut = cellpose.run();
-        if(resize) imgOut = imgOut.resize(img.getWidth(), img.getHeight(), "none");
         imgOut.setCalibration(cal);
        
         // Get cells as a population of objects and filter them
@@ -341,7 +316,7 @@ public class Tools {
         popFilter.resetLabels();
         System.out.println(popFilter.getNbObjects() + " detections remaining after filtering (" + (pop.getNbObjects()-popFilter.getNbObjects()) + " filtered out)");
         
-        closeImg(imgResized);
+        closeImg(imgIn);
         closeImg(imgOut);
         return(popFilter);
     }
@@ -364,141 +339,77 @@ public class Tools {
         
     
     /**
-     * Colocalize nuclei with two different populations of cells
+     * Measure image intensity background noise:
+     * Z projection over min intensity + read median intensity
+     * @param img
      */
-    public ArrayList<Cell> colocalization(Objects3DIntPopulation nucleiPop, Objects3DIntPopulation cellPop1, Objects3DIntPopulation cellPop2) {
-        ArrayList<Cell> cells = new ArrayList<Cell>();
-        if (nucleiPop.getNbObjects() > 0) {
-            MeasurePopulationColocalisation coloc1 = new MeasurePopulationColocalisation(nucleiPop, cellPop1);
-            MeasurePopulationColocalisation coloc2 = new MeasurePopulationColocalisation(nucleiPop, cellPop2);
-            float label = 1;
-            
-            for (Object3DInt nucleus: nucleiPop.getObjects3DInt()) {
-                Cell cell = new Cell(nucleus);
-             
-                for (Object3DInt c1: cellPop1.getObjects3DInt()) {
-                    double colocVal = coloc1.getValueObjectsPair(nucleus, c1);
-                    if (colocVal > 0.5*nucleus.size()) {
-                        Object3DInt cyto = new Object3DComputation​(c1).getObjectSubtracted(nucleus);
-                        cell.setNeun(c1, cyto);
-                        cellPop1.removeObject(c1);
-                        break;
-                    }
-                }
-                
-                for (Object3DInt c2: cellPop2.getObjects3DInt()) {
-                    double colocVal = coloc2.getValueObjectsPair(nucleus, c2);
-                    if (colocVal > 0.5*nucleus.size()) {
-                        Object3DInt cyto = new Object3DComputation​(c2).getObjectSubtracted(nucleus);
-                        cell.setOrf1p(c2, cyto);
-                        cellPop2.removeObject(c2);
-                        break;
-                    }
-                }
-                
-                cell.setLabel(label);
-                cells.add(cell);
-                label++;
-            }
-        }
-        return(cells);
-    }
-    
-      
-    /**
-     * Compute images background statistics:
-     * Z projection over min intensity + read median/mean/sd intensity
-     */
-    public HashMap<String, Double> getBackgroundStats(ImagePlus imgDAPI, ImagePlus imgNeun, ImagePlus imgOrf1p) {
-        HashMap<String, Double> bgs = new HashMap<>();
-
-        ImageStatistics dapiStats = getZProjectionStats(imgDAPI, ZProjector.MIN_METHOD);
-        bgs.put("dapiMedian", dapiStats.median);
-        bgs.put("dapiMean", dapiStats.mean);
-        bgs.put("dapiSd", dapiStats.stdDev);
-
-        ImageStatistics neunStats = getZProjectionStats(imgNeun, ZProjector.MIN_METHOD);
-        bgs.put("neunMedian", neunStats.median);
-        bgs.put("neunMean", neunStats.mean);
-        bgs.put("neunSd", neunStats.stdDev);
-
-        ImageStatistics orf1pStats = getZProjectionStats(imgOrf1p, ZProjector.MIN_METHOD);
-        bgs.put("orf1pMedian", orf1pStats.median);
-        bgs.put("orf1pMean", orf1pStats.mean);
-        bgs.put("orf1pSd", orf1pStats.stdDev);
-        
-        return(bgs);
+    public double measureBackgroundNoise(ImagePlus img) {
+      ImagePlus imgProj = doZProjection(img, ZProjector.MIN_METHOD);
+      double bg = imgProj.getProcessor().getStatistics().median;
+      System.out.println("Background (median of the min projection) = " + bg);
+      closeImg(imgProj);
+      return(bg);
     }
     
     
     /**
-     * Do Z projection
+     * Z-project a stack
      */
-    public ImageStatistics getZProjectionStats(ImagePlus img, int param) {
+    public ImagePlus doZProjection(ImagePlus img, int param) {
         ZProjector zproject = new ZProjector();
         zproject.setMethod(param);
         zproject.setStartSlice(1);
         zproject.setStopSlice(img.getNSlices());
         zproject.setImage(img);
         zproject.doProjection();
-        return(zproject.getProjection().getProcessor().getStatistics());
+       return(zproject.getProjection());
+    }
+    
+    
+    /**
+     * Colocalize nuclei with a population of cells
+     */
+    public ArrayList<Cell> colocalization(Objects3DIntPopulation nucleiPop, Objects3DIntPopulation cellPop) {
+        ArrayList<Cell> cells = new ArrayList<Cell>();
+        if (nucleiPop.getNbObjects() > 0) {
+            MeasurePopulationColocalisation coloc = new MeasurePopulationColocalisation(nucleiPop, cellPop);
+            float label = 1;
+            
+            for (Object3DInt nucleus: nucleiPop.getObjects3DInt()) {
+                Cell newCell = new Cell(nucleus);
+             
+                for (Object3DInt cell: cellPop.getObjects3DInt()) {
+                    double colocVal = coloc.getValueObjectsPair(nucleus, cell);
+                    if (colocVal > 0.25*nucleus.size()) {
+                        newCell.setPtau(cell);
+                        cellPop.removeObject(cell);
+                        break;
+                    }
+                }
+               
+                newCell.setLabel(label);
+                cells.add(newCell);
+                label++;
+            }
+        }
+        return(cells);
     }
     
 
     /**
      * Compute and save PV and PNN cells parameters
      */
-    public void writeCellsParameters(ArrayList<Cell> cells, ImagePlus imgDAPI, ImagePlus imgNeun, ImagePlus imgOrf1p, HashMap<String, Double> bgStats) {      
+    public void writeCellsParameters(ArrayList<Cell> cells, ImagePlus imgOrf1p, double bgOrf1p) { 
+        ImageHandler imhOrf1p = ImageHandler.wrap(imgOrf1p);
+        
         for (Cell cell : cells) {
             // Nucleus
             Object3DInt nucleus = cell.nucleus;
             double nucVol = new MeasureVolume(nucleus).getVolumeUnit();
-            double nucCirc = computeNucleusCircularity(nucleus, imgDAPI);
-            double nucIntMean = new MeasureIntensity(nucleus, ImageHandler.wrap(imgDAPI)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("dapiMedian");
-            double nucIntSd = new MeasureIntensity(nucleus, ImageHandler.wrap(imgDAPI)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-            double nucIntMeanNeun = new MeasureIntensity(nucleus, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("neunMedian");
-            double nucIntSdNeun = new MeasureIntensity(nucleus, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-            double nucIntMeanOrf1p = new MeasureIntensity(nucleus, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("orf1pMedian");
-            double nucIntSdOrf1p = new MeasureIntensity(nucleus, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-            cell.setNucParams(nucVol, nucCirc, nucIntMean, nucIntSd, nucIntMeanNeun, nucIntSdNeun, nucIntMeanOrf1p, nucIntSdOrf1p);
-           
-            // NeuN cell
-            Object3DInt neunCell = cell.neun;
-            Object3DInt neunCyto = cell.neunCyto;
-            if(neunCell != null) {
-                double neunVol = new MeasureVolume(neunCell).getVolumeUnit();
-                double neunIntMean = new MeasureIntensity(neunCell, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("neunMedian");
-                double neunIntSd = new MeasureIntensity(neunCell, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                double neunIntMeanOrf1p = new MeasureIntensity(neunCell, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("orf1pMedian");
-                double neunIntSdOrf1p = new MeasureIntensity(neunCell, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                double neunCytoVol = new MeasureVolume(neunCyto).getVolumeUnit()*pixelVol;
-                double neunCytoIntMean = new MeasureIntensity(neunCyto, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("neunMedian");
-                double neunCytoIntSd = new MeasureIntensity(neunCyto, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                double neunCytoIntMeanOrf1p = new MeasureIntensity(neunCyto, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("orf1pMedian");
-                double neunCytoIntSdOrf1p = new MeasureIntensity(neunCyto, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                cell.setNeunParams(neunVol, neunIntMean, neunIntSd, neunIntMeanOrf1p, neunIntSdOrf1p, neunCytoVol, neunCytoIntMean, neunCytoIntSd, neunCytoIntMeanOrf1p, neunCytoIntSdOrf1p);
-            } else {
-                cell.setNeunParams(null, null, null, null, null, null, null, null, null, null);
-            }      
-            
-            // ORF1p cell
-            Object3DInt orf1pCell = cell.orf1p;
-            Object3DInt orf1pCyto = cell.orf1pCyto;
-            if(orf1pCell != null) {
-                double orf1pVol = new MeasureVolume(orf1pCell).getVolumeUnit();
-                double orf1pIntMean = new MeasureIntensity(orf1pCell, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("orf1pMedian");
-                double orf1pIntSd = new MeasureIntensity(orf1pCell, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                double orf1pIntMeanNeun = new MeasureIntensity(orf1pCell, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("neunMedian");
-                double orf1pIntSdNeun = new MeasureIntensity(orf1pCell, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                double orf1pCytoVol = new MeasureVolume(orf1pCyto).getVolumeUnit()*pixelVol;
-                double orf1pCytoIntMean = new MeasureIntensity(orf1pCyto, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("orf1pMedian");
-                double orf1pCytoIntSd = new MeasureIntensity(orf1pCyto, ImageHandler.wrap(imgOrf1p)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                double orf1pCytoIntMeanNeun = new MeasureIntensity(orf1pCyto, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgStats.get("neunMedian");
-                double orf1pCytoIntSdNeun = new MeasureIntensity(orf1pCyto, ImageHandler.wrap(imgNeun)).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
-                cell.setOrf1pParams(orf1pVol, orf1pIntMean, orf1pIntSd, orf1pIntMeanNeun, orf1pIntSdNeun, orf1pCytoVol, orf1pCytoIntMean, orf1pCytoIntSd, orf1pCytoIntMeanNeun, orf1pCytoIntSdNeun);
-            } else {
-                cell.setOrf1pParams(null, null, null, null, null, null, null, null, null, null);
-            }
+            double nucCirc = computeNucleusCircularity(nucleus, imgOrf1p);
+            double nucOrf1pIntMean = new MeasureIntensity(nucleus, imhOrf1p).getValueMeasurement(MeasureIntensity.INTENSITY_AVG)-bgOrf1p;
+            double nucOrf1pIntSd = new MeasureIntensity(nucleus, imhOrf1p).getValueMeasurement(MeasureIntensity.INTENSITY_SD);
+            cell.setNucParams(nucVol, nucCirc, nucOrf1pIntMean, nucOrf1pIntSd);
         }
     }
     
@@ -525,45 +436,27 @@ public class Tools {
     /**
      * Save detected cells in image
      */
-    public void drawResults(ImagePlus img, ArrayList<Cell> cells, String parentFolder, String imageName, String outDir) {
-        ImageHandler imgObj1 = ImageHandler.wrap(img).createSameDimensions();
+    public void drawResults(ArrayList<Cell> cells, ImagePlus imgHoechst, ImagePlus imgPtau, String imgName) {
+        ImageHandler imgObj1 = ImageHandler.wrap(imgHoechst).createSameDimensions();
         ImageHandler imgObj2 = imgObj1.createSameDimensions();
-        ImageHandler imgObj3 = imgObj1.createSameDimensions();
         
         for(Cell cell: cells) {
             int label = cell.params.get("label").intValue();
-            if (cell.neun != null) {
-                cell.neunCyto.drawObject(imgObj1, label);
+            cell.nucleus.drawObject(imgObj1, label);
+            if (cell.isPtau) {
+                cell.ptau.drawObject(imgObj2, label);
             }
-            if (cell.orf1p != null) {
-                cell.orf1pCyto.drawObject(imgObj2, label);
-            }
-            cell.nucleus.drawObject(imgObj3, label);
+            
         }
         
-        ImagePlus[] imgColors = {imgObj1.getImagePlus(), imgObj2.getImagePlus(), imgObj3.getImagePlus(), img};
+        ImagePlus[] imgColors = {imgObj1.getImagePlus(), null, imgObj2.getImagePlus(), imgHoechst, imgPtau};
         ImagePlus imgObjects = new RGBStackMerge().mergeHyperstacks(imgColors, true);
         imgObjects.setCalibration(cal);
         FileSaver ImgObjectsFile = new FileSaver(imgObjects);
-        ImgObjectsFile.saveAsTiff(outDir + parentFolder.replace("/", "_").replace("\\", "_") + imageName + ".tif");
+        ImgObjectsFile.saveAsTiff(imgName + ".tif");
         
         closeImg(imgObj1.getImagePlus());
         closeImg(imgObj2.getImagePlus());
-        closeImg(imgObj3.getImagePlus());
         closeImg(imgObjects);
-    }
-    
-    
-    public int[] countCells(ArrayList<Cell> cells) {
-        int neun = 0, orf1p = 0, noneNone = 0, neunNone = 0, noneOrf1p = 0, neunOrf1p = 0;
-        for(Cell cell: cells) {
-            if(cell.neun != null) neun++;
-            if(cell.orf1p != null) orf1p++;
-            if(cell.neun == null && cell.orf1p == null) noneNone++;
-            if(cell.neun != null && cell.orf1p == null) neunNone++;
-            if(cell.neun == null && cell.orf1p != null) noneOrf1p++;
-            if(cell.neun != null && cell.orf1p != null) neunOrf1p++;
-        }
-        return(new int[]{neun, orf1p, noneNone, neunNone, noneOrf1p, neunOrf1p});
     }
 } 
