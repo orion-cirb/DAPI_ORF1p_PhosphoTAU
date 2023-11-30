@@ -19,6 +19,7 @@ import java.awt.Font;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import javax.swing.ImageIcon;
@@ -44,7 +45,7 @@ public class Tools {
     private final ImageIcon icon = new ImageIcon(this.getClass().getResource("/Orion_icon.png"));
     private final String helpUrl = "https://github.com/orion-cirb/Hoechst_ORF1p_pTAU.git";
     
-    public String[] channelNames = {"Hoechst", "ORF1p", "pTAU"};
+    public String[] channelNames = {"Hoechst", "ORF1p", "pTAU (optional)"};
     public Calibration cal;
     public double pixelVol;
     
@@ -55,14 +56,14 @@ public class Tools {
     public String cellposeNucModel = "cyto";
     public int cellposeNucDiam = 100;
     public double cellposeNucStitchThresh = 0.5;
-    public double minNucVol = 200;
-    public double maxNucVol = 6000;
+    public double minNucVol = 80;
+    public double maxNucVol = 2500;
     // pTAU detection
     public String cellposePtauModel = "cyto2_pTAU";
     public int cellposePtauDiam = 140;
     public double cellposePtauStitchThresh = 0.5;
-    public double minPtauVol = 1000;
-    public double maxPtauVol = 20000;
+    public double minPtauVol = 400;
+    public double maxPtauVol = 8000;
     
     
     
@@ -237,13 +238,14 @@ public class Tools {
      */
     public String[] dialog(String[] channels) {
         GenericDialogPlus gd = new GenericDialogPlus("Parameters");
-        gd.setInsets​(0, 120, 0);
+        gd.setInsets​(0, 60, 0);
         gd.addImage(icon);
         
         gd.addMessage("Channels", Font.getFont("Monospace"), Color.blue);
         int index = 0;
         for (String chName: channelNames) {
-            gd.addChoice(chName+" : ", channels, channels[index]);
+            if (chName.contains("optional")) channels = addToStringArray(channels, "None");
+            gd.addChoice(chName+": ", channels, channels[index]);
             index++;
         }
         
@@ -278,6 +280,13 @@ public class Tools {
             chChoices = null;
         
         return(chChoices);
+    }
+    
+    
+    public String[] addToStringArray(String[] oldArray, String newString) {
+        String[] newArray = Arrays.copyOf(oldArray, oldArray.length+1);
+        newArray[oldArray.length] = newString;
+        return newArray;
     }
     
     
@@ -403,7 +412,6 @@ public class Tools {
         ImageHandler imhOrf1p = ImageHandler.wrap(imgOrf1p);
         
         for (Cell cell : cells) {
-            // Nucleus
             Object3DInt nucleus = cell.nucleus;
             double nucVol = new MeasureVolume(nucleus).getVolumeUnit();
             double nucCirc = computeNucleusCircularity(nucleus, imgOrf1p);
@@ -443,13 +451,15 @@ public class Tools {
         for(Cell cell: cells) {
             int label = cell.params.get("label").intValue();
             cell.nucleus.drawObject(imgObj1, label);
-            if (cell.isPtau) {
+            if (cell.isPtau) 
                 cell.ptau.drawObject(imgObj2, label);
-            }
-            
         }
         
-        ImagePlus[] imgColors = {imgObj1.getImagePlus(), null, imgObj2.getImagePlus(), imgHoechst, imgPtau};
+        ImagePlus[] imgColors;
+        if(imgPtau == null) 
+            imgColors = new ImagePlus[]{imgObj1.getImagePlus(), null, null, imgHoechst};
+        else 
+            imgColors = new ImagePlus[]{imgObj1.getImagePlus(), null, imgObj2.getImagePlus(), imgHoechst, imgPtau};
         ImagePlus imgObjects = new RGBStackMerge().mergeHyperstacks(imgColors, true);
         imgObjects.setCalibration(cal);
         FileSaver ImgObjectsFile = new FileSaver(imgObjects);

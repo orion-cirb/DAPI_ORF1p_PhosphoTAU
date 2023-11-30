@@ -72,7 +72,7 @@ public class Hoechst_ORF1p_pTAU implements PlugIn {
             
             // Generate dialog box
             String[] channelChoices = tools.dialog(channels);
-            if (channels == null) {
+            if (channelChoices == null) {
                 IJ.showStatus("Plugin canceled");
                 return;
             }
@@ -86,11 +86,13 @@ public class Hoechst_ORF1p_pTAU implements PlugIn {
             
             // Write header in results file
             String header = "Image name\tNucleus label\tNucleus volume (µm3)\tNucleus circularity\t" +
-                     "ORF1p bg\tNucleus ORF1p bg-corr int mean\tNucleus ORF1p int sd\tis pTAU?\n";
-            FileWriter fwCellsResults = new FileWriter(outDirResults + "results.csv", false);
-            BufferedWriter cellsResults = new BufferedWriter(fwCellsResults);
-            cellsResults.write(header);
-            cellsResults.flush();
+                     "ORF1p bg\tNucleus ORF1p bg-corr int mean\tNucleus ORF1p int sd";
+            if (!channelChoices[2].equals("None")) 
+                header += "\tis pTAU?";
+            FileWriter fwResults = new FileWriter(outDirResults + "results.csv", false);
+            BufferedWriter results = new BufferedWriter(fwResults);
+            results.write(header+"\n");
+            results.flush();
 
             for (String f : imageFiles) {
                 String rootName = FilenameUtils.getBaseName(f);
@@ -103,31 +105,37 @@ public class Hoechst_ORF1p_pTAU implements PlugIn {
                 options.setQuiet(true);
                 options.setColorMode(ImporterOptions.COLOR_MODE_GRAYSCALE);
                 
-                // Open Hoechst channel
+                // Analyze Hoechst channel
                 tools.print("- Analyzing Hoechst channel -");
                 int indexCh = ArrayUtils.indexOf(channels, channelChoices[0]);
                 ImagePlus imgHoechst = BF.openImagePlus(options)[indexCh];
                 // Detect Hoechst nuclei with CellPose
                 Objects3DIntPopulation nucleiPop = tools.cellposeDetection(imgHoechst, tools.cellposeNucModel, tools.cellposeNucDiam, tools.cellposeNucStitchThresh, tools.minNucVol, tools.maxNucVol);
 
-                // Open ORF1p channel
+                // Analyze ORF1p channel
                 tools.print("- Analyzing ORF1p channel -");
                 indexCh = ArrayUtils.indexOf(channels, channelChoices[1]);
                 ImagePlus imgOrf1p = BF.openImagePlus(options)[indexCh];
                 // Measure ORF1p channel background
                 double bgOrf1p = tools.measureBackgroundNoise(imgOrf1p);
 
-                // Open pTAU channel
-                tools.print("- Analyzing pTAU channel -");
-                indexCh = ArrayUtils.indexOf(channels, channelChoices[2]);
-                ImagePlus imgPtau = BF.openImagePlus(options)[indexCh];
-                // Detect pTAU cells with CellPose
-                Objects3DIntPopulation ptauPop = tools.cellposeDetection(imgPtau, tools.cellposeModelPath+tools.cellposePtauModel, tools.cellposePtauDiam, tools.cellposePtauStitchThresh, tools.minPtauVol, tools.maxPtauVol);
-               
-                tools.print("- Colocalizing nuclei with pTAU cells -");
+                // Analyze pTAU channel
+                ImagePlus imgPtau = null;
+                Objects3DIntPopulation ptauPop = new Objects3DIntPopulation();
+                if(channelChoices[2].equals("None"))
+                    tools.print("- No pTAU channel provided -");
+                else {
+                    tools.print("- Analyzing pTAU channel -");
+                    indexCh = ArrayUtils.indexOf(channels, channelChoices[2]);
+                    imgPtau = BF.openImagePlus(options)[indexCh];
+                    // Detect pTAU cells with CellPose
+                    ptauPop = tools.cellposeDetection(imgPtau, tools.cellposeModelPath+tools.cellposePtauModel, tools.cellposePtauDiam, tools.cellposePtauStitchThresh, tools.minPtauVol, tools.maxPtauVol);
+                    tools.print("- Colocalizing nuclei with pTAU cells -");
+                }
                 ArrayList<Cell> cells = tools.colocalization(nucleiPop, ptauPop);
                 
-                tools.print("- Measuring cells parameters -");
+                // Measure parameters
+                tools.print("- Measuring nuclei parameters -");
                 tools.writeCellsParameters(cells, imgOrf1p, bgOrf1p);
                 
                 // Draw results
@@ -136,15 +144,20 @@ public class Hoechst_ORF1p_pTAU implements PlugIn {
                 
                 // Write results
                 for (Cell cell : cells) {
-                    cellsResults.write(rootName+"\t"+cell.params.get("label")+"\t"+cell.params.get("nucVol")+"\t"+cell.params.get("nucCirc")+
-                        "\t"+bgOrf1p+"\t"+cell.params.get("nucOrf1pIntMean")+"\t"+cell.params.get("nucOrf1pIntSd")+"\t"+cell.isPtau+"\n");
-                    cellsResults.flush();
+                    results.write(rootName+"\t"+cell.params.get("label")+"\t"+cell.params.get("nucVol")+"\t"+cell.params.get("nucCirc")+
+                        "\t"+bgOrf1p+"\t"+cell.params.get("nucOrf1pIntMean")+"\t"+cell.params.get("nucOrf1pIntSd"));
+                    if (imgPtau != null) 
+                        results.write("\t"+cell.isPtau);
+                    results.write("\n");
+                    results.flush();
                 }
                 
                 tools.closeImg(imgHoechst);
                 tools.closeImg(imgOrf1p);
-                tools.closeImg(imgPtau);
+                if (imgPtau != null) 
+                    tools.closeImg(imgPtau);
             }
+            results.close();
         } catch (IOException | DependencyException | ServiceException | FormatException ex) {
             Logger.getLogger(Hoechst_ORF1p_pTAU.class.getName()).log(Level.SEVERE, null, ex);
         }
